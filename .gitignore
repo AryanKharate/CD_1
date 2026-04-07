@@ -1,0 +1,6 @@
+venv
+outputs/plots
+outputs/predictions
+__pycache__
+data
+.DS_store

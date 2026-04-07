@@ -1,0 +1,152 @@
+"""
+============================================================
+CONFIGURATION FILE — LULC U-Net Semantic Segmentation
+============================================================
+Centralizes all settings: paths, hyperparameters, class maps,
+color palettes, and AOI coordinates for the Hyderabad region.
+============================================================
+"""
+
+import os
+
+# ──────────────────────────────────────────────────────────────
+# 1. PROJECT PATHS
+# ──────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+OUTPUT_DIR = os.path.join(BASE_DIR, "outputs")
+PATCHES_DIR = os.path.join(DATA_DIR, "patches")
+MODEL_DIR = os.path.join(OUTPUT_DIR, "models")
+PLOTS_DIR = os.path.join(OUTPUT_DIR, "plots")
+PREDICTIONS_DIR = os.path.join(OUTPUT_DIR, "predictions")
+
+# Create directories if they don't exist
+for d in [OUTPUT_DIR, PATCHES_DIR, MODEL_DIR, PLOTS_DIR, PREDICTIONS_DIR]:
+    os.makedirs(d, exist_ok=True)
+
+# ──────────────────────────────────────────────────────────────
+# 2. INPUT DATA FILES
+# ──────────────────────────────────────────────────────────────
+# Your Sentinel-2 satellite images (Mumbai)
+SENTINEL_2020 = os.path.join(DATA_DIR, "mumbai_whole_y1.tif")
+SENTINEL_2025 = os.path.join(DATA_DIR, "mumbai_whole_y2.tif")
+
+# ESA WorldCover label file (will be downloaded)
+WORLDCOVER_FILE = os.path.join(DATA_DIR, "worldcover_mumbai.tif")
+
+# ──────────────────────────────────────────────────────────────
+# 3. AREA OF INTEREST — Mumbai, India
+# ──────────────────────────────────────────────────────────────
+# Bounding box: [west, south, east, north]
+AOI_BOUNDS = [72.740, 18.839, 73.285, 19.496]
+
+# ──────────────────────────────────────────────────────────────
+# 4. SENTINEL-2 BAND CONFIGURATION
+# ──────────────────────────────────────────────────────────────
+# Band names as stored in the GeoTIFF files
+# Based on inspection: B2, B3, B4, B5, B6, B7, B8, B8A, B11, B12
+BAND_NAMES = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B11', 'B12']
+
+# Band indices (1-based) for the bands we need
+BAND_B2_IDX = 1   # Blue
+BAND_B3_IDX = 2   # Green
+BAND_B4_IDX = 3   # Red
+BAND_B8_IDX = 7   # NIR
+BAND_B11_IDX = 9  # SWIR1 (for NDBI)
+
+# Sentinel-2 scale factor (values are 0-10000, represent reflectance * 10000)
+SENTINEL_SCALE = 10000.0
+
+# ──────────────────────────────────────────────────────────────
+# 5. ESA WORLDCOVER CLASS MAPPING
+# ──────────────────────────────────────────────────────────────
+# ESA WorldCover 2021 class codes → Our 5-class scheme
+#
+# Target classes:
+#   0 = Vegetation    (Grassland + Shrubland + Cropland)
+#   1 = Dense Canopy  (Tree Cover + Mangroves)
+#   2 = Built-up      (Built-up areas)
+#   3 = Barren Land   (Bare/Sparse vegetation + Snow/Ice + Moss/Lichen)
+#   4 = Water         (Water bodies + Wetlands)
+
+ESA_TO_LULC = {
+    10:  1,   # Tree Cover        → Dense Canopy
+    20:  0,   # Shrubland         → Vegetation
+    30:  0,   # Grassland         → Vegetation
+    40:  0,   # Cropland          → Vegetation
+    50:  2,   # Built-up          → Built-up
+    60:  3,   # Bare/Sparse Veg   → Barren Land
+    70:  3,   # Snow and Ice      → Barren Land
+    80:  4,   # Permanent Water   → Water
+    90:  4,   # Herbaceous Wetland→ Water
+    95:  1,   # Mangroves         → Dense Canopy
+    100: 3,   # Moss and Lichen   → Barren Land
+}
+
+# Number of output classes
+NUM_CLASSES = 5
+
+# Class names for display
+CLASS_NAMES = [
+    "Vegetation",      # 0
+    "Dense Canopy",    # 1
+    "Built-up",        # 2
+    "Barren Land",     # 3
+    "Water",           # 4
+]
+
+# ──────────────────────────────────────────────────────────────
+# 6. VISUALIZATION COLORS (RGB 0-255)
+# ──────────────────────────────────────────────────────────────
+CLASS_COLORS = {
+    0: (0, 255, 0),       # Vegetation    → Green
+    1: (0, 100, 0),       # Dense Canopy  → Dark Green
+    2: (255, 0, 0),       # Built-up      → Red
+    3: (139, 69, 19),     # Barren Land   → Brown
+    4: (0, 0, 255),       # Water         → Blue
+}
+
+# Normalized colors for matplotlib (0-1 range)
+CLASS_COLORS_NORM = {
+    k: (r / 255.0, g / 255.0, b / 255.0)
+    for k, (r, g, b) in CLASS_COLORS.items()
+}
+
+# ──────────────────────────────────────────────────────────────
+# 7. IMAGE DIMENSIONS & PATCHING
+# ──────────────────────────────────────────────────────────────
+PATCH_SIZE = 256          # Output patch dimensions (H, W)
+PATCH_STRIDE = 256        # Non-overlapping patches (set < PATCH_SIZE for overlap)
+INPUT_CHANNELS = 6        # B, G, R, NIR, SWIR, NDVI
+INPUT_SHAPE = (PATCH_SIZE, PATCH_SIZE, INPUT_CHANNELS)
+
+# ──────────────────────────────────────────────────────────────
+# 8. TRAINING HYPERPARAMETERS
+# ──────────────────────────────────────────────────────────────
+BATCH_SIZE = 8            # Optimized for 8GB RAM
+EPOCHS = 30               # Max epochs (early stopping may end earlier)
+LEARNING_RATE = 1e-4      # Adam optimizer learning rate
+VALIDATION_SPLIT = 0.2    # 20% validation
+EARLY_STOP_PATIENCE = 10  # Stop if no improvement for 10 epochs
+LR_REDUCE_PATIENCE = 5   # Reduce LR if no improvement for 5 epochs
+LR_REDUCE_FACTOR = 0.5   # Halve the learning rate
+DROPOUT_RATE = 0.3        # Dropout in bottleneck
+
+# ──────────────────────────────────────────────────────────────
+# 9. LOSS FUNCTION SETTINGS
+# ──────────────────────────────────────────────────────────────
+USE_DICE_LOSS = True      # Combine CE + Dice loss
+DICE_LOSS_WEIGHT = 0.5    # Weight for dice loss component
+CE_LOSS_WEIGHT = 0.5      # Weight for cross-entropy component
+USE_CLASS_WEIGHTS = True  # Compute weights from label distribution
+
+# ──────────────────────────────────────────────────────────────
+# 10. U-NET MODEL SETTINGS
+# ──────────────────────────────────────────────────────────────
+# Lightweight filter sizes to fit in 8GB RAM
+UNET_FILTERS = [32, 64, 128, 256, 512]
+
+# ──────────────────────────────────────────────────────────────
+# 11. RANDOM SEED
+# ──────────────────────────────────────────────────────────────
+RANDOM_SEED = 42
