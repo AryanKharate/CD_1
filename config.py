@@ -27,18 +27,45 @@ for d in [OUTPUT_DIR, PATCHES_DIR, MODEL_DIR, PLOTS_DIR, PREDICTIONS_DIR]:
 # ──────────────────────────────────────────────────────────────
 # 2. INPUT DATA FILES
 # ──────────────────────────────────────────────────────────────
-# Your Sentinel-2 satellite images (Mumbai)
-SENTINEL_2020 = os.path.join(DATA_DIR, "mumbai_whole_y1.tif")
-SENTINEL_2025 = os.path.join(DATA_DIR, "mumbai_whole_y2.tif")
+# Your Sentinel-2 satellite images
+SENTINEL_2020 = os.path.join(DATA_DIR, "S2_north_goa_10bands_2026-03-04.tif")
+SENTINEL_2025 = os.path.join(DATA_DIR, "worldcover_hyderabad.tif")
 
 # ESA WorldCover label file (will be downloaded)
 WORLDCOVER_FILE = os.path.join(DATA_DIR, "worldcover_mumbai.tif")
 
 # ──────────────────────────────────────────────────────────────
-# 3. AREA OF INTEREST — Mumbai, India
+# 3. AREA OF INTEREST — Automatic detection
 # ──────────────────────────────────────────────────────────────
+def get_aoi_bounds(filepath):
+    """
+    Automatically calculate WGS84 (Lat/Lon) bounding box from a GeoTIFF file.
+    """
+    import rasterio
+    from rasterio.warp import transform_bounds
+    
+    if not os.path.exists(filepath):
+        return None
+        
+    try:
+        with rasterio.open(filepath) as src:
+            bounds = src.bounds
+            # If not already WGS84, transform
+            if src.crs.to_string() != 'EPSG:4326':
+                w, s, e, n = transform_bounds(src.crs, 'EPSG:4326', *bounds)
+                return [round(w, 4), round(s, 4), round(e, 4), round(n, 4)]
+            return [round(bounds.left, 4), round(bounds.bottom, 4), 
+                    round(bounds.right, 4), round(bounds.top, 4)]
+    except Exception as e:
+        print(f"  ⚠ Could not extract bounds from {os.path.basename(filepath)}: {e}")
+        return None
+
 # Bounding box: [west, south, east, north]
-AOI_BOUNDS = [72.740, 18.839, 73.285, 19.496]
+# Try to detect from file, otherwise fallback to Mumbai coordinates
+AOI_BOUNDS = get_aoi_bounds(SENTINEL_2020) or [72.740, 18.839, 73.285, 19.496]
+
+if os.path.exists(SENTINEL_2020):
+    print(f"  → Detected AOI for {os.path.basename(SENTINEL_2020)}: {AOI_BOUNDS}")
 
 # ──────────────────────────────────────────────────────────────
 # 4. SENTINEL-2 BAND CONFIGURATION
