@@ -4,3 +4,5 @@ outputs/predictions
 __pycache__
 data
 .DS_store
+.idea
+outputs/

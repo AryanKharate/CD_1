@@ -235,37 +235,6 @@ def recover_bridges_spectrally(full_prediction, input_stack):
     return full_prediction
 
 
-def recover_shadows_spectrally(full_prediction, input_stack):
-    """
-    Post-processing rule to rescue building shadows misclassified as water.
-    Uses NDWI and NDVI to isolate shadows from true water bodies.
-    """
-    # [0:B, 1:G, 2:R, 3:NIR, 4:SWIR, 5:NDVI]
-    green = input_stack[..., 1]
-    nir   = input_stack[..., 3]
-    ndvi  = input_stack[..., 5]
-
-    # NDWI = (Green - NIR) / (Green + NIR) -> Higher for deep water
-    ndwi = (green - nir) / (green + nir + 1e-6)
-
-    # RESCUE LOGIC:
-    # 1. Pixel is currently classified as Water (4)
-    # 2. NDWI is weak (< 0.1) -> Shadows have low NDWI, water has high.
-    # 3. NDVI is not extremely low (> -0.1) -> Pure water creates deeply negative NDVI.
-    shadow_mask = (
-        (full_prediction == 4) &
-        (ndwi < 0.1) &
-        (ndvi > -0.1)
-    )
-
-    n_recovered = np.sum(shadow_mask)
-    if n_recovered > 0:
-        print(f"  → Spectrally recovered {n_recovered:,d} shadow pixels from water!")
-        full_prediction[shadow_mask] = 2 # Set to Built-up (Red)
-        
-    return full_prediction
-
-
 def predict_full_image(model, sentinel_filepath):
     """
     Run prediction on a full Sentinel-2 image using sliding window.
@@ -325,10 +294,6 @@ def predict_full_image(model, sentinel_filepath):
     # ── SPECTRAL BRIDGE RECOVERY ──
     # Rescue bridges/roads misclassified as water using physical light properties
     full_prediction = recover_bridges_spectrally(full_prediction, input_stack)
-    
-    # ── SPECTRAL SHADOW RECOVERY ──
-    # Rescue building shadows misclassified as water
-    full_prediction = recover_shadows_spectrally(full_prediction, input_stack)
     
     # Mask out areas where no predictions occurred
     full_prediction[count_map == 0] = 0
