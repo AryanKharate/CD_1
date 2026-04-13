@@ -30,7 +30,7 @@ from utils import print_banner, plot_training_history
 # CUSTOM LOSS FUNCTIONS
 # ──────────────────────────────────────────────────────────────
 
-def dice_loss(y_true, y_pred, smooth=1e-6):
+def dice_loss(y_true, y_pred, smooth=1e-6, class_weights_dict=None):
     """
     Compute Dice Loss for multi-class segmentation.
     
@@ -43,6 +43,7 @@ def dice_loss(y_true, y_pred, smooth=1e-6):
         y_true: Ground truth, shape (batch, H, W), integer labels
         y_pred: Predictions, shape (batch, H, W, num_classes), probabilities
         smooth: Smoothing factor to avoid division by zero
+        class_weights_dict: Optional dictionary of class weights
     
     Returns:
         Scalar dice loss value
@@ -61,15 +62,30 @@ def dice_loss(y_true, y_pred, smooth=1e-6):
     
     dice = (2.0 * intersection + smooth) / (union + smooth)
     
+    if class_weights_dict is not None:
+        weights = [class_weights_dict.get(i, 1.0) for i in range(NUM_CLASSES)]
+        weights_tensor = tf.constant(weights, dtype=tf.float32)
+        # Normalize weights to sum to NUM_CLASSES so the overall loss scale remains similar
+        weights_tensor = weights_tensor / tf.reduce_mean(weights_tensor)
+        dice = dice * weights_tensor
+
     # Average across classes
     return 1.0 - tf.reduce_mean(dice)
 
 
-def categorical_focal_loss(gamma=2.0, alpha=0.25):
+def categorical_focal_loss(class_weights_dict=None, gamma=2.0, alpha=0.25):
     """
     Categorical Focal Loss function for handling highly imbalanced datasets.
     Down-weights easy examples and focuses training on hard negatives.
     """
+    if class_weights_dict is not None:
+        weights = [class_weights_dict.get(i, 1.0) for i in range(NUM_CLASSES)]
+        class_weights_tensor = tf.constant(weights, dtype=tf.float32)
+        # Normalize weights to sum to NUM_CLASSES
+        class_weights_tensor = class_weights_tensor / tf.reduce_mean(class_weights_tensor)
+    else:
+        class_weights_tensor = 1.0
+
     def loss_fn(y_true, y_pred):
         # Convert y_true to one-hot for dot product matching
         y_true_onehot = tf.one_hot(tf.cast(y_true, tf.int32), NUM_CLASSES)
@@ -80,6 +96,9 @@ def categorical_focal_loss(gamma=2.0, alpha=0.25):
         # Cross Entropy term
         cross_entropy = -y_true_onehot * tf.math.log(y_pred)
         
+        # Apply class weights
+        cross_entropy = cross_entropy * class_weights_tensor
+
         # Focal multiplier
         loss = alpha * tf.math.pow(1.0 - y_pred, gamma) * cross_entropy
         
@@ -94,7 +113,7 @@ def combined_loss(class_weights_dict=None):
     Create a combined loss function: Focal Loss + Dice Loss.
     """
     # Create Focal Loss
-    focal_fn = categorical_focal_loss()
+    focal_fn = categorical_focal_loss(class_weights_dict=class_weights_dict)
     
     def loss_fn(y_true, y_pred):
         # Focal Loss component
@@ -102,7 +121,7 @@ def combined_loss(class_weights_dict=None):
         
         if USE_DICE_LOSS:
             # Dice loss component
-            dl = dice_loss(y_true, y_pred)
+            dl = dice_loss(y_true, y_pred, class_weights_dict=class_weights_dict)
             # Weighted combination
             total = CE_LOSS_WEIGHT * focal + DICE_LOSS_WEIGHT * dl
         else:

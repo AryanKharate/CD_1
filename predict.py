@@ -235,7 +235,30 @@ def recover_bridges_spectrally(full_prediction, input_stack):
     return full_prediction
 
 
-def predict_full_image(model, sentinel_filepath):
+def recover_barren_spectrally(full_prediction, input_stack):
+    """
+    Post-processing rule to rescue barren land misclassified as vegetation.
+    Uses NDVI and SWIR.
+    """
+    # [0:B, 1:G, 2:R, 3:NIR, 4:SWIR, 5:NDVI]
+    ndvi = input_stack[..., 5]
+    swir = input_stack[..., 4]
+    
+    barren_mask = (
+        ((full_prediction == 0) | (full_prediction == 1)) &
+        (ndvi < 0.25) &
+        (swir > 0.10)
+    )
+
+    n_recovered = np.sum(barren_mask)
+    if n_recovered > 0:
+        print(f"  → Spectrally recovered {n_recovered:,d} barren land pixels from vegetation!")
+        full_prediction[barren_mask] = 3 # Set to Barren Land
+
+    return full_prediction
+
+
+def predict_full_image(model, sentinel_filepath, output_dir=None):
     """
     Run prediction on a full Sentinel-2 image using sliding window.
     
@@ -294,9 +317,16 @@ def predict_full_image(model, sentinel_filepath):
     # ── SPECTRAL BRIDGE RECOVERY ──
     # Rescue bridges/roads misclassified as water using physical light properties
     full_prediction = recover_bridges_spectrally(full_prediction, input_stack)
+
+    # Rescue barren land misclassified as vegetation
+    full_prediction = recover_barren_spectrally(full_prediction, input_stack)
     
-    # Mask out areas where no predictions occurred
-    full_prediction[count_map == 0] = 0
+    # Mask out areas where no predictions occurred with 255 (nodata)
+    full_prediction[count_map == 0] = 255
+    
+    # Mask out areas that are completely black/nodata in the input
+    nodata_mask = np.all(input_stack[..., :5] == 0, axis=-1)
+    full_prediction[nodata_mask] = 255
     
     print("  → Bypassing median filter to preserve thin linear structures (bridges) perfectly!")
     # full_prediction = scipy.ndimage.median_filter(full_prediction, size=3)
@@ -321,13 +351,14 @@ def predict_full_image(model, sentinel_filepath):
                ncol=NUM_CLASSES, fontsize=11)
     
     plt.tight_layout()
-    save_path = os.path.join(PREDICTIONS_DIR,
+    out_d = output_dir if output_dir else PREDICTIONS_DIR
+    save_path = os.path.join(out_d,
                               f"full_{os.path.basename(sentinel_filepath).replace('.tif', '.png')}")
     fig.savefig(save_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  → Saved full prediction to: {save_path}")
     import rasterio
-    tif_save_path = os.path.join(PREDICTIONS_DIR, f"predicted_lulc_{os.path.basename(sentinel_filepath)}")
+    tif_save_path = os.path.join(out_d, f"predicted_lulc_{os.path.basename(sentinel_filepath)}")
     
     with rasterio.open(sentinel_filepath) as src:
         prof = src.profile

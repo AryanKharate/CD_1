@@ -77,6 +77,12 @@ Generates high-resolution colored GeoTIFFs of your AOI.
 python main.py --predict
 ```
 
+### Stage 5: Batch Prediction
+Automatically runs prediction on a directory full of `.tif` files (supports nested folders) and saves the outputs maintaining the exact directory structure.
+```bash
+python batch_predict.py --input /path/to/input_folder --output /path/to/output_folder
+```
+
 ---
 
 ## 🗺 Land Cover Classes
