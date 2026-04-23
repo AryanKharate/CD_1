@@ -79,7 +79,7 @@ def build_input_stack(bands):
     """
     Build the 6-channel input stack: [Blue, Green, Red, NIR, SWIR, NDVI].
     
-    This deep stack allows the ResUNet to decouple complex classes like Barren vs Built-Up.
+    This deep stack allows the ResUNet to decouple complex classes.
     NDVI is computed from NIR and Red bands and normalized to [0, 1].
     
     Args:
@@ -123,9 +123,11 @@ def load_worldcover_labels():
       30 (Grassland)       → 0 (Vegetation)
       40 (Cropland)        → 0 (Vegetation)
       50 (Built-up)        → 2 (Built-up)
-      60 (Bare/Sparse)     → 3 (Barren Land)
-      80 (Water)           → 4 (Water)
-      90 (Wetland)         → 4 (Water)
+      60 (Bare/Sparse)     → 4 (Barren Land)
+      70 (Snow/Ice)        → 4 (Barren Land)
+      80 (Water)           → 3 (Water)
+      90 (Wetland)         → 3 (Water)
+      100 (Moss/Lichen)    → 4 (Barren Land)
     
     Returns:
         2D numpy array of shape (H, W) with integer class labels [0-4]

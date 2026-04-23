@@ -216,12 +216,12 @@ def recover_bridges_spectrally(full_prediction, input_stack):
     ndwi = (green - nir) / (green + nir + 1e-6)
 
     # RESCUE LOGIC:
-    # 1. Pixel is currently classified as Water (4)
+    # 1. Pixel is currently classified as Water (3)
     # 2. SWIR is high (> 0.05) -> Water is normally < 0.04
     # 3. NDBI is positive -> Spectral signature of a building/bridge
     # 4. NDWI is not extremely high (< 0.3) -> Not pure deep water
     bridge_mask = (
-        (full_prediction == 4) &
+        (full_prediction == 3) &
         (swir > 0.05) &
         (ndbi > 0.0) &
         (ndwi < 0.3)
@@ -234,28 +234,92 @@ def recover_bridges_spectrally(full_prediction, input_stack):
         
     return full_prediction
 
+def detect_barren_land(full_prediction, input_stack):
+    """
+    Apply predefined standalone thresholding logic to detect Barren Land.
+    """
+    from scipy.ndimage import binary_erosion, binary_dilation
 
-def recover_barren_spectrally(full_prediction, input_stack):
-    """
-    Post-processing rule to rescue barren land misclassified as vegetation.
-    Uses NDVI and SWIR.
-    """
+    # ── Barren-positive thresholds (all must pass) ─────────────
+    BSI_MIN        = -0.15   # Bare Soil Index  > 0   means mineral soil dominates (relaxed to capture more barren)
+    NDVI_MAX       =  0.45   # NDVI must be LOW (relaxed to capture sparse vegetation as barren)
+    NDWI_MAX       =  0.25   # NDWI must be LOW (relaxed to avoid misclassifying dry lands)
+    IBI_MAX        =  0.35   # IBI  must be LOW (relaxed)
+    MNDWI_MAX      =  0.25   # MNDWI must be LOW
+
+    # ── Spectral shape guards ───────────────────────────────────
+    RED_NIR_RATIO_MIN  = 0.40   # Red/NIR  (bare soil is bright in Red, relaxed to capture more)
+    SWIR_NIR_RATIO_MIN = 0.60   # SWIR1/NIR (bare soil bright in SWIR, relaxed)
+
+    # ── False-positive suppressors ──────────────────────────────
+    NDSI_MAX       =  0.50   # Normalised Difference Snow Index (rejects snow/cloud)
+    SHADOW_MIN     =  0.03   # Minimum mean reflectance (rejects dark cloud shadows)
+
+    def norm_index(b1, b2):
+        denom = b1 + b2
+        return np.where(denom == 0, 0.0, (b1 - b2) / denom)
+
+    def safe_ratio(num, den):
+        return np.where(den == 0, 0.0, num / den)
+
     # [0:B, 1:G, 2:R, 3:NIR, 4:SWIR, 5:NDVI]
-    ndvi = input_stack[..., 5]
-    swir = input_stack[..., 4]
+    blue  = input_stack[..., 0]
+    green = input_stack[..., 1]
+    red   = input_stack[..., 2]
+    nir   = input_stack[..., 3]
+    swir1 = input_stack[..., 4]
     
-    barren_mask = (
-        ((full_prediction == 0) | (full_prediction == 1)) &
-        (ndvi < 0.25) &
-        (swir > 0.10)
-    )
+    valid_mask = ((red > 0) | (green > 0) | (blue > 0)) & \
+                 (red < 1.5) & (green < 1.5) & (nir < 1.5)
 
-    n_recovered = np.sum(barren_mask)
+    ndvi = norm_index(nir, red)
+    ndwi = norm_index(green, nir)
+    mndwi = norm_index(green, swir1)
+    
+    ndbi  = norm_index(swir1, nir)
+    savi  = np.where((nir + red + 0.5) == 0, 0.0,
+                     ((nir - red) * 1.5) / (nir + red + 0.5))
+    ibi_num = ndbi - (savi + mndwi) / 2.0
+    ibi_den = ndbi + (savi + mndwi) / 2.0
+    ibi  = np.clip(np.where(ibi_den == 0, 0.0, ibi_num / ibi_den), -1.0, 1.0)
+
+    bsi_num = (swir1 + red) - (nir + blue)
+    bsi_den = (swir1 + red) + (nir + blue)
+    bsi = np.where(bsi_den == 0, 0.0, bsi_num / bsi_den)
+
+    ndsi = norm_index(green, swir1)
+
+    red_nir_ratio  = safe_ratio(red,  nir)
+    swir_nir_ratio = safe_ratio(swir1, nir)
+
+    mean_refl = (blue + green + red + nir) / 4.0
+
+    barren_raw = (
+        valid_mask                           &
+        (bsi  > BSI_MIN)                     &  
+        (ndvi < NDVI_MAX)                    &  
+        (ndwi < NDWI_MAX)                    &  
+        (mndwi < MNDWI_MAX)                  &  
+        (ibi  < IBI_MAX)                     &  
+        (red_nir_ratio  > RED_NIR_RATIO_MIN) &  
+        (swir_nir_ratio > SWIR_NIR_RATIO_MIN)&  
+        (ndsi < NDSI_MAX)                    &  
+        (mean_refl > SHADOW_MIN)               
+    )
+    
+    struct = np.ones((3, 3), dtype=bool)
+    barren_clean = barren_raw.copy()
+    # Dilate first to connect small patches and avoid losing them during erosion
+    barren_clean = binary_dilation(barren_clean, structure=struct)
+    barren_clean = barren_clean & valid_mask
+
+    n_recovered = int(barren_clean.sum())
     if n_recovered > 0:
-        print(f"  → Spectrally recovered {n_recovered:,d} barren land pixels from vegetation!")
-        full_prediction[barren_mask] = 3 # Set to Barren Land
+        print(f"  → ML post-processing: Overrode {n_recovered:,} pixels as Barren Land via spectral script logic!")
+        full_prediction[barren_clean] = 4
 
     return full_prediction
+
 
 
 def predict_full_image(model, sentinel_filepath, output_dir=None):
@@ -284,25 +348,38 @@ def predict_full_image(model, sentinel_filepath, output_dir=None):
 
     h, w = input_stack.shape[:2]
     stride = PATCH_SIZE // 2
-    full_probs = np.zeros((h, w, NUM_CLASSES), dtype=np.float32)
+    
+    # Initialize probabilities based on the number of classes the ML model actually returns
+    model_num_classes = model.output_shape[-1]
+    full_probs = np.zeros((h, w, model_num_classes), dtype=np.float32)
     count_map = np.zeros((h, w), dtype=np.float32)
     
-    # Slide across the image in patches via overlapping window
+    coords = []
     for y in range(0, h - PATCH_SIZE + 1, stride):
         for x in range(0, w - PATCH_SIZE + 1, stride):
-            patch = input_stack[y:y+PATCH_SIZE, x:x+PATCH_SIZE, :]
-            
-            # Skip mostly-empty patches
-            if np.sum(patch[:, :, 0] > 0) < (PATCH_SIZE * PATCH_SIZE * 0.5):
-                continue
-            
-            # Predict
-            patch_input = np.expand_dims(patch, axis=0)
-            probs = model.predict(patch_input, verbose=0)
-            
-            # Accumulate probabilities to smooth boundaries
-            full_probs[y:y+PATCH_SIZE, x:x+PATCH_SIZE, :] += probs[0]
-            count_map[y:y+PATCH_SIZE, x:x+PATCH_SIZE] += 1.0
+            coords.append((y, x))
+    for y in range(0, h - PATCH_SIZE + 1, stride):
+        coords.append((y, w - PATCH_SIZE))
+    for x in range(0, w - PATCH_SIZE + 1, stride):
+        coords.append((h - PATCH_SIZE, x))
+    coords.append((h - PATCH_SIZE, w - PATCH_SIZE))
+    coords = list(set([c for c in coords if c[0] >= 0 and c[1] >= 0]))
+
+    # Slide across the image in patches via overlapping window
+    for (y, x) in coords:
+        patch = input_stack[y:y+PATCH_SIZE, x:x+PATCH_SIZE, :]
+        
+        # Skip mostly-empty patches
+        if np.sum(patch[:, :, 0] > 0) < (PATCH_SIZE * PATCH_SIZE * 0.5):
+            continue
+        
+        # Predict
+        patch_input = np.expand_dims(patch, axis=0)
+        probs = model.predict(patch_input, verbose=0)
+        
+        # Accumulate probabilities to smooth boundaries
+        full_probs[y:y+PATCH_SIZE, x:x+PATCH_SIZE, :] += probs[0]
+        count_map[y:y+PATCH_SIZE, x:x+PATCH_SIZE] += 1.0
     
     print(f"    Predicted area: {np.sum(count_map > 0):,d} / {h*w:,d} pixels")
     
@@ -318,9 +395,9 @@ def predict_full_image(model, sentinel_filepath, output_dir=None):
     # Rescue bridges/roads misclassified as water using physical light properties
     full_prediction = recover_bridges_spectrally(full_prediction, input_stack)
 
-    # Rescue barren land misclassified as vegetation
-    full_prediction = recover_barren_spectrally(full_prediction, input_stack)
-    
+    # ── SCRIPTED BARREN LAND DETECTION OVERRIDE ──
+    full_prediction = detect_barren_land(full_prediction, input_stack)
+
     # Mask out areas where no predictions occurred with 255 (nodata)
     full_prediction[count_map == 0] = 255
     

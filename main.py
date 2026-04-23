@@ -138,6 +138,13 @@ def run_full_pipeline():
     # Predict on full 2025 image if available
     if os.path.exists(SENTINEL_2025):
         predict_full_image(model, SENTINEL_2025)
+        
+        # ── Step 5.5: Change Detection ─────────────────────────────
+        from change_detection import generate_change_map
+        y1_pred = os.path.join(PREDICTIONS_DIR, f"predicted_lulc_{os.path.basename(SENTINEL_2020)}")
+        y2_pred = os.path.join(PREDICTIONS_DIR, f"predicted_lulc_{os.path.basename(SENTINEL_2025)}")
+        if os.path.exists(y1_pred) and os.path.exists(y2_pred):
+            generate_change_map(y1_pred, y2_pred)
     
     # ── Step 6: Evaluate ───────────────────────────────────────
     from evaluate import evaluate_model
@@ -170,6 +177,8 @@ def main():
                        help='Run predictions only')
     parser.add_argument('--evaluate', action='store_true',
                        help='Run evaluation only')
+    parser.add_argument('--change-detection', action='store_true',
+                       help='Run change detection only')
     parser.add_argument('--visualize-data', action='store_true',
                        help='Visualize data samples before training')
     
@@ -209,6 +218,16 @@ def main():
     if args.evaluate:
         from evaluate import evaluate_model
         evaluate_model()
+
+    if args.change_detection:
+        from change_detection import generate_change_map
+        from config import SENTINEL_2020, SENTINEL_2025
+        y1_pred = os.path.join(PREDICTIONS_DIR, f"predicted_lulc_{os.path.basename(SENTINEL_2020)}")
+        y2_pred = os.path.join(PREDICTIONS_DIR, f"predicted_lulc_{os.path.basename(SENTINEL_2025)}")
+        if os.path.exists(y1_pred) and os.path.exists(y2_pred):
+            generate_change_map(y1_pred, y2_pred)
+        else:
+            print("  ⚠ Predictions not found. Run --predict first.")
 
 
 if __name__ == "__main__":

@@ -6,3 +6,6 @@ data
 .DS_store
 .idea
 outputs/
+test_barren.py
+user_full_test.py
+

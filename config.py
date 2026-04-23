@@ -28,8 +28,8 @@ for d in [OUTPUT_DIR, PATCHES_DIR, MODEL_DIR, PLOTS_DIR, PREDICTIONS_DIR]:
 # 2. INPUT DATA FILES
 # ──────────────────────────────────────────────────────────────
 # Your Sentinel-2 satellite images
-SENTINEL_2020 = os.path.join(DATA_DIR, "S2_north_goa_10bands_2026-03-04.tif")
-SENTINEL_2025 = os.path.join(DATA_DIR, "worldcover_hyderabad.tif")
+SENTINEL_2020 = os.path.join(DATA_DIR, "palgarh_2021-04-27_pre.tif")
+SENTINEL_2025 = os.path.join(DATA_DIR, "palgarh_2025-12-27_post.tif")
 
 # ESA WorldCover label file (will be downloaded)
 WORLDCOVER_FILE = os.path.join(DATA_DIR, "worldcover_mumbai.tif")
@@ -93,8 +93,8 @@ SENTINEL_SCALE = 10000.0
 #   0 = Vegetation    (Grassland + Shrubland + Cropland)
 #   1 = Dense Canopy  (Tree Cover + Mangroves)
 #   2 = Built-up      (Built-up areas)
-#   3 = Barren Land   (Bare/Sparse vegetation + Snow/Ice + Moss/Lichen)
-#   4 = Water         (Water bodies + Wetlands)
+#   3 = Water         (Water bodies + Wetlands)
+#   4 = Barren Land   (Bare/Sparse vegetation + Snow/Ice + Moss/Lichen)
 
 ESA_TO_LULC = {
     10:  1,   # Tree Cover        → Dense Canopy
@@ -102,12 +102,12 @@ ESA_TO_LULC = {
     30:  0,   # Grassland         → Vegetation
     40:  0,   # Cropland          → Vegetation
     50:  2,   # Built-up          → Built-up
-    60:  3,   # Bare/Sparse Veg   → Barren Land
-    70:  3,   # Snow and Ice      → Barren Land
-    80:  4,   # Permanent Water   → Water
-    90:  4,   # Herbaceous Wetland→ Water
+    60:  4,   # Bare/Sparse Veg   → Barren Land
+    70:  4,   # Snow and Ice      → Barren Land
+    80:  3,   # Permanent Water   → Water
+    90:  3,   # Herbaceous Wetland→ Water
     95:  1,   # Mangroves         → Dense Canopy
-    100: 3,   # Moss and Lichen   → Barren Land
+    100: 4,   # Moss and Lichen   → Barren Land
 }
 
 # Number of output classes
@@ -118,8 +118,8 @@ CLASS_NAMES = [
     "Vegetation",      # 0
     "Dense Canopy",    # 1
     "Built-up",        # 2
-    "Barren Land",     # 3
-    "Water",           # 4
+    "Water",           # 3
+    "Barren Land",     # 4
 ]
 
 # ──────────────────────────────────────────────────────────────
@@ -129,8 +129,8 @@ CLASS_COLORS = {
     0: (0, 255, 0),       # Vegetation    → Green
     1: (0, 100, 0),       # Dense Canopy  → Dark Green
     2: (255, 0, 0),       # Built-up      → Red
-    3: (139, 69, 19),     # Barren Land   → Brown
-    4: (0, 0, 255),       # Water         → Blue
+    3: (0, 0, 255),       # Water         → Blue
+    4: (139, 69, 19),     # Barren Land   → Brown
 }
 
 # Normalized colors for matplotlib (0-1 range)

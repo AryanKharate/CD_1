@@ -1,6 +1,6 @@
 # Satellite LULC Classification & Change Detection
 
-A high-performance pipeline for Land Use / Land Cover (LULC) classification using Sentinel-2 multispectral imagery and ESA WorldCover labels. This project is specifically optimized for localized high-accuracy urban mapping, featuring advanced architectural upgrades like ResUNet and Test-Time Augmentation (TTA).
+A high-performance pipeline for Land Use / Land Cover (LULC) classification and temporal Change Detection using Sentinel-2 multispectral imagery and ESA WorldCover labels. This project is optimized for localized high-accuracy urban and ecological mapping, featuring advanced neural networks, morphological overrides, and automated multi-file processing.
 
 ---
 
@@ -12,23 +12,24 @@ The core model is a **Residual U-Net (ResUNet)**. By incorporating residual skip
 ### 2. Multi-Spectral Deep Stack (6-Channel)
 Unlike standard RGB models, this pipeline utilizes a 6-band input stack:
 - **BANDS:** [Blue, Green, Red, Near-Infrared (NIR), Short-Wave Infrared (SWIR), NDVI]
-- **Advantage:** The inclusion of SWIR light provides "spectral X-ray" capabilities, allowing the model to unequivocally distinguish between urban concrete (Built-up) and natural barren soil.
+- **Advantage:** The inclusion of SWIR light provides "spectral X-ray" capabilities, allowing the model to unequivocally distinguish between complex urban and natural targets.
 
-### 3. Advanced Inference Strategies
-- **Overlapping Sliding Window:** Eliminates "grid-line" artifacts in large GeoTIFF mosaics.
-- **Test-Time Augmentation (TTA):** Predicts on 3 views (Original, Horizontal Flip, Vertical Flip) and averages the probabilities for maximum boundary stability.
-- **Bridge Rescue Logic:** A custom heuristic that identifies pixels with ≥30% Built-up probability over water, specifically designed to preserve thin linear infrastructure like bridges.
+### 3. Automated Sub-Agent Operations
+- **Metadata AOI Extraction:** Eliminates hardcoded coordinates by dynamically reading geographic bounding boxes directly from the provided Sentinel-2 GeoTIFF metadata.
+- **Overlapping Sliding Window:** Eliminates "grid-line" artifacts in large geographically boundless GeoTIFF mosaics.
+- **Bridge Rescue Logic:** A custom spectral heuristic relying on SWIR/NDBI combinations to actively rescue thin linear infrastructure (bridges) misclassified functionally as water.
+- **Standalone Barren Land Override:** A strict morphological sequence applying dynamic pixel equations (BSI, NDVI, NDBI) to cleanly bypass neural network logic and overlay absolute Barren Land classifications securely onto map predictions.
 
-### 4. Direct ESA S3 Integration
-Automated download of ground-truth labels directly from the ESA WorldCover S3 buckets, ensuring perfect alignment with Sentinel-2 tiles without requiring manual GIS work.
+### 4. Advanced Change Detection Pipeline
+Dedicated routines dynamically compare baseline classifications (e.g., 2020) against updated sets (e.g., 2025) to map out transition matrices like Urban Expansion, Canopy Deforestation, and Ecological Recovery sequences.
 
 ---
 
 ## 🛠 Technology Stack
-- **Framework:** TensorFlow / Keras (Optimized with `tensorflow-metal` for Apple Silicon)
+- **Framework:** TensorFlow / Keras (Optimized for deep learning model integration)
 - **Geospatial:** Rasterio, GeoPandas, Shapely
-- **Analysis:** NumPy, SciPy (Median filtering & Morphological smoothing)
-- **Visualization:** Matplotlib with custom embedded GeoTIFF colormaps
+- **Analysis:** NumPy, SciPy (Median filtering, mathematical thresholding & Morphological operations)
+- **Visualization:** Matplotlib with custom embedded GeoTIFF colormaps and transition graphics
 
 ---
 
@@ -54,56 +55,68 @@ Automated download of ground-truth labels directly from the ESA WorldCover S3 bu
 The project is orchestrated via `main.py`. You can run the entire pipeline or specific stages.
 
 ### Stage 1: Data Download
-Downloads Sentinel-2 imagery and aligned ESA WorldCover labels for your configured Area of Interest (AOI).
+Downloads Sentinel-2 imagery and aligned ESA WorldCover labels covering your `.tif` metadata limits.
 ```bash
 python main.py --download
 ```
 
 ### Stage 2: Preprocessing
-Extracts multispectral patches (256x256) and prepares the 6-channel tensors for training.
+Extracts multispectral patches (256x256), applies categorical index normalizations, and prepares the 6-channel tensors.
 ```bash
 python main.py --preprocess
 ```
 
 ### Stage 3: Training
-Trains the ResUNet model using a combination of **Categorical Focal Loss** and **Dice Loss** to handle class imbalance.
+Trains the ResUNet model using a combination of **Categorical Focal Loss** and **Dice Loss** to handle dataset class imbalances naturally.
 ```bash
 python main.py --train
 ```
 
-### Stage 4: Prediction (The "TTA" Mode)
-Generates high-resolution colored GeoTIFFs of your AOI.
+### Stage 4: Prediction
+Generates high-resolution colored GeoTIFF predictions of your selected region, including ML and algorithmic Barren/Bridge overrides.
 ```bash
 python main.py --predict
 ```
 
-### Stage 5: Batch Prediction
-Automatically runs prediction on a directory full of `.tif` files (supports nested folders) and saves the outputs maintaining the exact directory structure.
+### Stage 5: Change Detection
+Computes the pixel-level transition matrix between multiple predictive years to visually chart geographic progression elements.
 ```bash
-python batch_predict.py --input /path/to/input_folder --output /path/to/output_folder
+python change_detection.py
 ```
+
+### Stage 6: Batch Automation
+Automatically runs prediction on a directory full of `.tif` files, preserving the folder structure (ideal for multiple regions like Pune, Palghar, etc.).
+
+**1. Predict on all .tif files in a folder (and its subfolders):**
+```bash
+python batch_predict.py --input data --output outputs/predictions
+```
+
+**2. Run Change Detection on the predicted regions:**
+Once the predictions are generated in `outputs/predictions`, you can run change detection to analyze the built-up percent change and area increase.
+For example, if you have predictions for 2020 and 2025 images:
+```bash
+python change_detection.py
+```
+*(If you need to batch process change detection for multiple region folders like Pune and Palghar, you can use the batch change detection script if available).*
 
 ---
 
 ## 🗺 Land Cover Classes
-The output is color-coded according to the following scheme:
-- 🟢 **Vegetation:** Green
-- 🌲 **Dense Canopy:** Dark Green
-- 🔴 **Built-up:** Red
-- 🟤 **Barren Land:** Brown
-- 🔵 **Water:** Blue
+The model and scripts operate using a hyper-resolved 5-Class system:
+- 🟢 **Vegetation:** Green (Grasses, Shrubs)
+- 🌲 **Dense Canopy:** Dark Green (Trees, Forests, Mangroves)
+- 🔴 **Built-up:** Red (Urban grids, Roads)
+- 🔵 **Water:** Blue (Deep pools, Lakes)
+- 🟤 **Barren Land:** Brown (Bare earth, Sparse ground, Sand)
 
 ---
 
 ## 📂 Project Structure
-- `config.py`: Central configuration for AOIs, paths, and hyperparameters.
+- `config.py`: Central configuration for input paths, color mappings, and hyperparameters.
 - `model.py`: ResUNet architecture definition.
-- `train.py`: Training logic and custom loss functions.
-- `predict.py`: Sliding window, TTA, and Bridge Rescue logic.
-- `data_download.py`: S3 Sentinel/WorldCover fetcher.
-- `preprocessing.py`: Feature engineering and patch extraction.
-
----
-
-## 📈 Performance Goals
-The pipeline is currently tuned for a **Localized Pixel Accuracy of >80%** and **Mean IoU of >60%**, which represents the technical ceiling for 10m/pixel automated LULC classification using Sentinel-2.
+- `train.py`: Training logic and custom class-weighted loss schemas.
+- `predict.py`: Sliding window inference alongside spectral heuristics algorithms (Bridges & Barren intercepts).
+- `preprocessing.py`: Feature engineering bounding boxes and multi-spectral feature stacking schemas.
+- `change_detection.py`: Mathematical sequence maps calculating chronological ecosystem transitions.
+- `batch_predict.py`: Iterator orchestrating high-volume regional dataset runs.
